@@ -23,7 +23,7 @@ use strict;
 use feature ':5.10';
 use warnings;
 
-our $VERSION = v0.9.2;
+our $VERSION = v0.9.3;
 our $version_string = sprintf("v%vd", $VERSION);
 
 my %info = (
@@ -31,11 +31,12 @@ my %info = (
 	contact     => '#shameimaru@irc.rizon.net',
 	url         => 'http://repo.or.cz/w/foo_spam.git',
 	name        => 'foo_spam',
-	description => 'Prints the currently playing song from foobar2000, Banshee or an MPRIS compliant player',
+	description => 'Prints the currently playing song from foobar2000, Banshee, mpd or an MPRIS compliant player',
 	license     => 'ISC'
 );
 
 # ChangeLog:
+# 0.9.3 - Add mpd compatibility
 # 0.9.2 - Fixed compatibility with perl 5.12, remove dependency on common::sense. Allow it to run on perl v5.10.0.
 # 0.9.1 - Reverted 0.9.0, it broke everything.
 # 0.8.3 - Better %filesize_natural% calculation
@@ -94,6 +95,7 @@ $default_format =~ s/\R//g;
 our $format = $default_format;
 our $hostname = "127.0.0.1";
 our $hostport = 3333;
+our $mpd_pass = '';
 our %heap;
 
 our $settings_file = undef;    # Only used by Xchat
@@ -106,7 +108,7 @@ sub open_telnet {
 	$telnet_open = $telnet->open($hostname);
 	unless ($telnet_open) {
 		irc_print(
-			"Error connecting to foobar2000! Make sure fb2k is running.");
+			"Error connecting to $player! Make sure $player is running.");
 		irc_print("Also check if foo_controlserver is properly configured.");
 	}
 	return $telnet_open;
@@ -344,6 +346,67 @@ sub get_track_info_fb2k {
 	return info_clean($info);
 }
 
+sub get_track_info_mpd {
+	return undef unless open_telnet();
+
+	my %info;
+	my $data = $telnet->getline();
+	if ($data =~ /^OK MPD (.*)$/) { $info{'player'} = 'mpd'; $info{'version'} = "v$1"; }
+	else { warn "Could not connect to mpd."; return undef; }
+
+	#identify if password is set
+	if ($mpd_pass) {
+		$telnet->print("password $mpd_pass");
+		$data = $telnet->get();
+		if ($data =~ /^ACK/) { warn "Could not identify to mpd: $data"; return undef; }
+	}
+
+	$telnet->print("currentsong");
+	$data = $telnet->get();
+	#parse currentsong-data
+	foreach (split("\n", $data)) {
+		given ($_) {
+			when (/^file: (.*)$/)           { $info{'_path_raw'}      = $1; }
+			when (/^Album: (.*)$/)          { $info{'album'}          = $1; }
+			when (/^AlbumArtist: (.*)$/)    { $info{'album artist'}   = $1; }
+			when (/^Artist: (.*)$/)         { $info{'artist'}         = $1; }
+			when (/^Composer: (.*)$/)       { $info{'composer'}       = $1; }
+			when (/^Time: (.*)$/)           { $info{'length_seconds'} = $1; }
+			when (/^Date: (.*)$/)           { $info{'date'}           = $1; }
+			when (/^Disc: (.*)$/)           { $info{'discnumber'}     = $1; }
+			when (/^Genre: (.*)$/)          { $info{'genre'}          = $1; }
+			when (/^Title: (.*)$/)          { $info{'title'}          = $1; }
+			when (/^Track: (.*)$/)          { $info{'tracknumber'}    = $1; }
+		}
+	}
+	my @path = split /\/+/, $info{'_path_raw'};
+	$info{'filename_ext'}  = $path[$#path];
+	$info{'directoryname'} = $path[$#path-1];
+	$info{'filename'} = $info{'filename_ext'};
+	$info{'filename'} =~ s/(.*)\..*/$1/;
+	$info{'path'} = join '/', @path[0 .. $#path];
+
+	$telnet->print("status");
+	$data = $telnet->get();
+
+	close_telnet();
+
+	#parse status-data
+	foreach (split("\n", $data)) {
+		given ($_) {
+			when (/^time: (\d+):\d+$/)      { $info{'playback_time_seconds'} = $1; }
+			when (/^bitrate: (.*)$/)        { $info{'bitrate'}               = $1; }
+			when (/^audio: (.*):(.*):(.*)/) { $info{'codec_profile'}         = "$1Hz $2bits/sample $3channels"; }
+			when (/^state: (.*)$/)          { $info{'state'}                 = $1; }
+		}
+	}
+	$info{'isplaying'} = 0; $info{'ispaused'} = 0;
+	if ($info{'state'} eq 'play')     { $info{'isplaying'} = 1; }
+	elsif ($info{'state'} eq 'pause') { $info{'ispaused'}  = 1; }
+
+	return info_clean(\%info);
+}
+
 sub get_track_info_banshee {
 	eval { require Net::DBus; 1 } or ( warn "Can't find Net::DBus" and return undef );
 
@@ -510,6 +573,9 @@ sub get_track_info {
 		}
 		when("banshee") {
 			return get_track_info_banshee(@_);
+		}
+		when ("mpd") {
+			return get_track_info_mpd(@_);
 		}
 		default {
 			return get_track_info_mpris(@_);
@@ -947,10 +1013,10 @@ EOF
 sub get_intro_string {
 	my $intro = <<EOF
 \002----------------------------------------------------------------------------------------------------
-\002foo_spam - prints the currently playing track from foobar2000, Banshee or an MPRIS compliant player
+\002foo_spam - prints the currently playing track from foobar2000, Banshee, mpd or an MPRIS compliant player
 \002Version $version_string - Created by Kovensky \(irc.rizon.net #shameimaru\)
-This script requires Banshee or a properly configured foobar2000.
-Note that the script only works remotely with foobar2000.
+This script requires Banshee, mpd, a properly configured foobar2000 or an MPRIS compiant player.
+Note that the script only works remotely with foobar2000 and mpd.
 Run /foo_help for help setting foobar2000 up.
 \002----------------------------------------------------------------------------------------------------
 Usage:
@@ -965,7 +1031,18 @@ Usage:
  * X-Chat: /set_foo_player <player>
  * WeeChat: /set plugins.var.foo_spam.player <player>
 For now, /foo_control only supports foobar2000.
-foobar2000 and banshee have specific implementations. Other players will use the MPRIS interface.
+foobar2000, banshee and mpd have specific implementations. Other players will use the MPRIS interface.
+\002----------------------------------------------------------------------------------------------------
+\002If you're using mpd, you may wish to set the password, host and port settings:
+ * Irssi:   /set foo_host <host>
+            /set foo_port <port>
+            /set foo_mpd_password <pass>
+ * X-Chat:  /set_foo_host <host>
+            /set_foo_port <port>
+            /set_foo_mpd_password <pass>
+ * WeeChat: /set plugins.foo_spam.host <host>
+            /set plugins.foo_spam.port <port>
+            /set plugins.foo_spam.mpd_password <pass>
 \002----------------------------------------------------------------------------------------------------
 EOF
 	    ;
@@ -1042,6 +1119,7 @@ if (HAVE_IRSSI) {
 		$player = lc(Irssi::settings_get_str("foo_player"));
 		$hostname = Irssi::settings_get_str("foo_host");
 		$hostport = Irssi::settings_get_str("foo_port");
+		$mpd_pass = Irssi::settings_get_str("foo_mpd_password");
 
 		my $str = get_np_string( decode( "UTF-8", $data ) );
 		if ((defined($str)) && ($witem) &&
@@ -1080,6 +1158,7 @@ if (HAVE_IRSSI) {
 	Irssi::settings_add_str( "foo_spam", "foo_player", $player );
 	Irssi::settings_add_str( "foo_spam", "foo_host", $hostname );
 	Irssi::settings_add_str( "foo_spam", "foo_port", $hostport );
+	Irssi::settings_add_str( "foo_spam", "foo_mpd_password", $mpd_pass );
 	Irssi::command_bind( 'aud',         'print_now_playing' );
 	Irssi::command_bind( 'np',          'print_now_playing' );
 	Irssi::command_bind( 'foo_control', sub { send_command(shift) } );
@@ -1110,10 +1189,11 @@ if (HAVE_IRSSI) {
 		my $value = shift;
 		my $ref;
 		given ($setting) {
-			when ('player')   { $ref = \$player; }
-			when ('format')   { $ref = \$format; }
-			when ('hostname') { $ref = \$hostname; }
-			when ('port')     { $ref = \$hostport; }
+			when ('player')       { $ref = \$player; }
+			when ('format')       { $ref = \$format; }
+			when ('hostname')     { $ref = \$hostname; }
+			when ('port')         { $ref = \$hostport; }
+			when ('mpd_password') { $ref = \$mpd_pass; }
 		}
 		if (not defined $ref) {
 			Xchat::print("Unknown setting: $setting.\n");
@@ -1131,6 +1211,7 @@ if (HAVE_IRSSI) {
 			print $settings_file "format=$format\n";
 			print $settings_file "hostname=$hostname\n";
 			print $settings_file "port=$hostport\n";
+			print $settings_file "mpd_password=$mpd_pass\n";
 			close($settings_file);
 		}
 		else {
@@ -1162,6 +1243,12 @@ if (HAVE_IRSSI) {
 	};
 	if ( defined(*set_foo_hostname) ) { }  # Silence a warning
 
+	*set_foo_mpd_password = sub {
+		set_foo_settings('mpd_password', $_[0][1]);
+		return Xchat::EAT_ALL();
+	};
+	if ( defined(*set_foo_mpd_password) ) { }  # Silence a warning
+
 	*print_foo_format_help = sub {
 		Xchat::print( get_foo_format_help_string() );
 		return Xchat::EAT_ALL();
@@ -1181,11 +1268,12 @@ if (HAVE_IRSSI) {
 		for (<$settings_file>) {
 			chomp;
 			given ($_) {
-				when (/^format=(.*)/)   { $format   = $1; }
-				when (/^player=(.*)/)   { $player   = lc($1); }
-				when (/^hostname=(.*)/) { $hostname = $1; }
-				when (/^port=(.*)/)     { $hostport = $1; }
-				default {                 $format = $_ if $_; }
+				when (/^format=(.*)/)       { $format   = $1; }
+				when (/^player=(.*)/)       { $player   = lc($1); }
+				when (/^hostname=(.*)/)     { $hostname = $1; }
+				when (/^port=(.*)/)         { $hostport = $1; }
+				when (/^mpd_password=(.*)/) { $mpd_pass = $1; }
+				default {                     $format   = $_ if $_; }
 			}
 		}
 		close($settings_file);
@@ -1209,6 +1297,8 @@ if (HAVE_IRSSI) {
 		{ help => "displays or changes the port to connect to" } );
 	Xchat::hook_command( "set_foo_hostname", "set_foo_hostname",
 		{ help => "displays or changes the hostname to connect to" } );
+	Xchat::hook_command( "set_foo_mpd_password", "set_foo_mpd_password",
+		{ help => "displays or changes the password used to connect to mpd" } );
 	Xchat::hook_command( "foo_control", sub { send_command($_[0][1]); return Xchat::EAT_ALL(); },
 		{ help => "sends a command to foobar2000. One of play, pause, stop, next or prev." } );
 	Xchat::hook_command( "foo_format", "print_foo_format_help",
@@ -1224,6 +1314,7 @@ if (HAVE_IRSSI) {
 		$player   = lc(weechat::config_get_plugin("player"));
 		$hostport = weechat::config_get_plugin("port");
 		$hostname = weechat::config_get_plugin("hostname");
+		$mpd_pass = weechat::config_get_plugin("mpd_password");
 		my $str = get_np_string(
 			$args[0] ? decode( "UTF-8", join( ' ', @args ) ) : undef );
 		if ( defined($str) ) {
@@ -1268,6 +1359,9 @@ if (HAVE_IRSSI) {
 	unless ( weechat::config_is_set_plugin("hostname") ) {
 		weechat::config_set_plugin( "hostname", "127.0.0.1" );
 	}
+	unless ( weechat::config_is_set_plugin("mpd_password") ) {
+		weechat::config_set_plugin( "mpd_password", "" );
+	}
 
 	weechat::hook_command( 'np', 'alias to /aud',
 		'', '', '%(nicks)', 'print_now_playing', '' );
@@ -1309,9 +1403,10 @@ if (HAVE_IRSSI) {
 	            'command=s' => \$command,
 	            'host=s' => \$hostname,
 	            'port=s' => \$hostport,
+							'pass=s' => \$mpd_pass,
 	            'help' => sub {
 		            $_ = <<EOF;
-foo_spam $version_string - prints the currently playing track from foobar2000, Banshee or an MPRIS compliant player
+foo_spam $version_string - prints the currently playing track from foobar2000, Banshee, mpd or an MPRIS compliant player
 Supports command line, X-Chat, irssi and weechat.
 Options:
     --player=PLAYER    Any of the supported players
@@ -1320,6 +1415,7 @@ Options:
     --command=COMMAND  A command to send to foobar2000. One of 'play', 'pause', 'prev', 'next', 'stop'. Foobar2000 only.
     --host=ADDRESS     The address of the computer running foobar2000. Default is localhost. Foobar2000 only.
     --port=PORT        The port number foobar2000 is listening at. Default is 3333. Foobar2000 only.
+		--pass=PASS        The password to use for mpd. Default is no password. mpd only.
 EOF
 		            print $_;
 		            exit;
