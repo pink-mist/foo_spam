@@ -105,6 +105,7 @@ sub open_telnet {
 	$telnet
 	    = new Net::Telnet( Port => $hostport, Timeout => 10, Errmode => 'return' )
 	    if not defined($telnet);
+	$telnet->port($hostport);
 	$telnet_open = $telnet->open($hostname);
 	unless ($telnet_open) {
 		irc_print(
