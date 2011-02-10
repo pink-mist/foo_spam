@@ -358,12 +358,17 @@ sub get_track_info_mpd {
 	#identify if password is set
 	if ($mpd_pass) {
 		$telnet->print("password $mpd_pass");
-		$data = $telnet->get();
+		($data, undef) = $telnet->waitfor(
+				Match => '/OK/',
+				TimeOut => 5);
 		if ($data =~ /^ACK/) { warn "Could not identify to mpd: $data"; return undef; }
 	}
 
 	$telnet->print("currentsong");
-	$data = $telnet->get();
+  ($data, undef) = $telnet->waitfor(
+			Match => '/OK/',
+			TimeOut => 5);
+
 	#parse currentsong-data
 	foreach (split("\n", $data)) {
 		given ($_) {
@@ -388,7 +393,9 @@ sub get_track_info_mpd {
 	$info{'path'} = join '/', @path[0 .. $#path];
 
 	$telnet->print("status");
-	$data = $telnet->get();
+  ($data, undef) = $telnet->waitfor(
+			Match => '/OK/',
+			TimeOut => 5);
 
 	close_telnet();
 
