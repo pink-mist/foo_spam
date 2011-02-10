@@ -24,6 +24,7 @@ use feature ':5.10';
 use warnings;
 
 our $VERSION = v0.9.2;
+my $version_string = sprintf("v%vd", $VERSION);
 
 my %info = (
 	author      => 'Kovensky, pink_mist',
@@ -947,7 +948,7 @@ sub get_intro_string {
 	my $intro = <<EOF
 \002----------------------------------------------------------------------------------------------------
 \002foo_spam - prints the currently playing track from foobar2000, Banshee or an MPRIS compliant player
-\002Version $VERSION - Created by Kovensky \(irc.rizon.net #shameimaru\)
+\002Version $version_string - Created by Kovensky \(irc.rizon.net #shameimaru\)
 This script requires Banshee or a properly configured foobar2000.
 Note that the script only works remotely with foobar2000.
 Run /foo_help for help setting foobar2000 up.
@@ -1310,7 +1311,7 @@ if (HAVE_IRSSI) {
 	            'port=s' => \$hostport,
 	            'help' => sub {
 		            $_ = <<EOF;
-foo_spam $VERSION - prints the currently playing track from foobar2000, Banshee or an MPRIS compliant player
+foo_spam $version_string - prints the currently playing track from foobar2000, Banshee or an MPRIS compliant player
 Supports command line, X-Chat, irssi and weechat.
 Options:
     --player=PLAYER    Any of the supported players
