@@ -382,6 +382,8 @@ sub get_track_info_mpd {
 			when (/^Disc: (.*)$/)           { $info{'discnumber'}     = $1; }
 			when (/^Genre: (.*)$/)          { $info{'genre'}          = $1; }
 			when (/^Title: (.*)$/)          { $info{'title'}          = $1; }
+			when (/^Track: (\d+)\/(\d+)$/)  { $info{'tracknumber'}    = $1;
+			                                  $info{'totaltracks'}    = $2; }
 			when (/^Track: (.*)$/)          { $info{'tracknumber'}    = $1; }
 		}
 	}
