@@ -24,7 +24,7 @@ use feature ':5.10';
 use warnings;
 
 our $VERSION = v0.9.2;
-my $version_string = sprintf("v%vd", $VERSION);
+our $version_string = sprintf("v%vd", $VERSION);
 
 my %info = (
 	author      => 'Kovensky, pink_mist',
