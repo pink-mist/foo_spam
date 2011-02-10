@@ -153,7 +153,7 @@ sub send_command {
 sub info_clean {
 	my $info = shift;
 
-	$info->{'foo_spam_version'} = $VERSION;
+	$info->{'foo_spam_version'} = $version_string;
 
 	if ($info->{'isplaying'}) {
 		if ($info->{'ispaused'}) {
