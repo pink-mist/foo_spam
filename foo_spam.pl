@@ -352,22 +352,24 @@ sub get_track_info_mpd {
 
 	my %info;
 	my $data = $telnet->getline();
+	my $match;
 	if ($data =~ /^OK MPD (.*)$/) { $info{'player'} = 'mpd'; $info{'version'} = "v$1"; }
 	else { warn "Could not connect to mpd."; return undef; }
 
 	#identify if password is set
 	if ($mpd_pass) {
 		$telnet->print("password $mpd_pass");
-		($data, undef) = $telnet->waitfor(
-				Match => '/OK/',
+		($data, $match) = $telnet->waitfor(
+				Match => '/OK|ACK.*/',
 				TimeOut => 5);
-		if ($data =~ /^ACK/) { warn "Could not identify to mpd: $data"; return undef; }
+		if ($match =~ /^ACK/) { warn "Could not identify to mpd: $match"; close_telnet(); return undef; }
 	}
 
 	$telnet->print("currentsong");
-  ($data, undef) = $telnet->waitfor(
-			Match => '/OK/',
+  ($data, $match) = $telnet->waitfor(
+			Match => '/OK|ACK.*/',
 			TimeOut => 5);
+  if ($match =~ /^ACK/) { warn "Did not have permission to see currentsong."; close_telnet(); return undef; }
 
 	#parse currentsong-data
 	foreach (split("\n", $data)) {
@@ -395,11 +397,11 @@ sub get_track_info_mpd {
 	$info{'path'} = join '/', @path[0 .. $#path];
 
 	$telnet->print("status");
-  ($data, undef) = $telnet->waitfor(
-			Match => '/OK/',
+  ($data, $match) = $telnet->waitfor(
+			Match => '/OK|ACK.*/',
 			TimeOut => 5);
-
 	close_telnet();
+  if ($match =~ /^ACK/) { warn "Did not have permission to see status."; return undef; }
 
 	#parse status-data
 	foreach (split("\n", $data)) {
