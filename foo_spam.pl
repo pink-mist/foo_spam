@@ -2,8 +2,9 @@
 #
 # foo_spam - Prints the currently playing song from foobar2000.
 #
-# Copyright (c) 2009-2010, Diogo Franco (Kovensky) <diogomfranco@gmail.com>
+# Copyright (c) 2009-2011, Diogo Franco (Kovensky) <diogomfranco@gmail.com>
 # Contributions by Kulag <g.kulag@gmail.com>
+# and pink_mist <andreas.guldstrand@gmail.com>
 #
 # Permission to use, copy, modify, and/or distribute this software for any
 # purpose with or without fee is hereby granted, provided that the above
@@ -27,7 +28,7 @@ our $VERSION = v0.9.2;
 our $version_string = sprintf("v%vd", $VERSION);
 
 my %info = (
-	author      => 'Kovensky, pink_mist',
+	author      => 'Kovensky, Kulag, pink_mist',
 	contact     => '#shameimaru@irc.rizon.net',
 	url         => 'http://repo.or.cz/w/foo_spam.git',
 	name        => 'foo_spam',
